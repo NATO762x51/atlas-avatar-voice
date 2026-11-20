@@ -63,25 +63,8 @@ p { color: #b9bdca; }
   transform-origin: 54% 28%;
 }
 
-.portrait.speaking .mouth-opening {
-  animation: show-opening 470ms ease-in-out infinite;
-}
-
-.portrait.speaking .lower-lip {
-  animation: move-lip 470ms ease-in-out infinite;
-}
-
-@keyframes show-opening {
-  0%, 100% { opacity: 0; }
-  32% { opacity: 1; }
-  65% { opacity: .65; }
-}
-
-@keyframes move-lip {
-  0%, 100% { opacity: 0; transform: scaleY(1); }
-  32% { opacity: 1; transform: scaleY(1.26); }
-  65% { opacity: 1; transform: scaleY(1.12); }
-}
+.portrait.speaking .mouth-opening { opacity: var(--mouth-open, 0); transform: scaleY(var(--mouth-scale, 1)); transform-origin: center top; transition: opacity 75ms ease-out, transform 75ms ease-out; }
+.portrait.speaking .lower-lip { opacity: var(--mouth-open, 0); transform: scaleY(var(--lip-scale, 1)); transition: opacity 75ms ease-out, transform 75ms ease-out; }
 
 .full-body-video {
   width: 100%;
@@ -127,6 +110,31 @@ const face = document.getElementById("face");
 const button = document.getElementById("speak");
 const speechStatus = document.getElementById("status");
 const listenButton = document.getElementById("listen");
+let mouthTimer = null;
+function setMouth(level) {
+  const amount = Math.max(0, Math.min(1, level));
+  face.style.setProperty("--mouth-open", amount.toFixed(2));
+  face.style.setProperty("--mouth-scale", (1 + amount * .6).toFixed(2));
+  face.style.setProperty("--lip-scale", (1 + amount * .3).toFixed(2));
+}
+function stopMouth() {
+  clearInterval(mouthTimer); mouthTimer = null;
+  setMouth(0); face.classList.remove("speaking");
+}
+// Browser speech synthesis does not expose its output audio to Web Audio.
+// Word boundaries provide approximate articulation; fallback is varied motion.
+function startMouth() {
+  stopMouth(); face.classList.add("speaking");
+  mouthTimer = setInterval(() => {
+    if (!face.classList.contains("speaking")) return;
+    setMouth(.12 + Math.random() * .55);
+  }, 115);
+}
+function articulateWord(word) {
+  if (!word) return;
+  const vowels = (word.match(/[aeiouy]/gi) || []).length;
+  setMouth(Math.min(1, .25 + vowels * .16));
+}
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!Recognition) { listenButton.disabled = true; listenButton.title = "Speech recognition unavailable in this browser"; }
 else {
@@ -143,9 +151,9 @@ else {
       speechSynthesis.cancel();
       const answer = new SpeechSynthesisUtterance("I heard you say: " + words + ". This is the Atlas voice workshop, not yet the full AI assistant.");
       answer.lang = "en-US";
-      answer.onstart = () => face.classList.add("speaking");
-      answer.onend = () => face.classList.remove("speaking");
-      answer.onerror = () => face.classList.remove("speaking");
+      answer.onstart = startMouth;\n      answer.onboundary = e => { if (e.name === "word") articulateWord(answer.text.slice(e.charIndex).split(/\s/)[0]); };
+      answer.onend = stopMouth;
+      answer.onerror = stopMouth;
       speechSynthesis.speak(answer);
     }
   };
@@ -228,17 +236,17 @@ button.addEventListener("click", () => {
   function start() {
     clearInterval(speechCheck);
     if (face.classList.contains("speaking")) return;
-    face.classList.add("speaking");
+    startMouth();
     speechStatus.textContent = "Atlas is speaking…";
   }
 
   message.onstart = start;
-  message.onboundary = start;
+  message.onboundary = event => {\n    if (!face.classList.contains("speaking")) start();\n    if (event.name === "word") articulateWord(message.text.slice(event.charIndex).split(/\s/)[0]);\n  };
   let speechCheck;
 
   function finish() {
     clearInterval(speechCheck);
-    face.classList.remove("speaking");
+    stopMouth();
     speechStatus.textContent = "Ready to speak";
     button.disabled = false;
   }
