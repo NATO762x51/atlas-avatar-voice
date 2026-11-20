@@ -111,29 +111,40 @@ const button = document.getElementById("speak");
 const speechStatus = document.getElementById("status");
 const listenButton = document.getElementById("listen");
 let mouthTimer = null;
+let mouthCueUntil = 0;
+let mouthPhase = 0;
 function setMouth(level) {
   const amount = Math.max(0, Math.min(1, level));
   face.style.setProperty("--mouth-open", amount.toFixed(2));
-  face.style.setProperty("--mouth-scale", (1 + amount * .6).toFixed(2));
-  face.style.setProperty("--lip-scale", (1 + amount * .3).toFixed(2));
+  face.style.setProperty("--mouth-scale", (1 + amount * .48).toFixed(2));
+  face.style.setProperty("--lip-scale", (1 + amount * .22).toFixed(2));
 }
 function stopMouth() {
-  clearInterval(mouthTimer); mouthTimer = null;
-  setMouth(0); face.classList.remove("speaking");
+  clearInterval(mouthTimer);
+  mouthTimer = null;
+  mouthCueUntil = 0;
+  setMouth(0);
+  face.classList.remove("speaking");
 }
-// Browser speech synthesis does not expose its output audio to Web Audio.
-// Word boundaries provide approximate articulation; fallback is varied motion.
+// Web Speech API does not expose synthesized audio samples. These are
+// text-guided approximate mouth cues, not true phoneme/audio lip sync.
 function startMouth() {
-  stopMouth(); face.classList.add("speaking");
+  stopMouth();
+  face.classList.add("speaking");
   mouthTimer = setInterval(() => {
-    if (!face.classList.contains("speaking")) return;
-    setMouth(.12 + Math.random() * .55);
-  }, 115);
+    if (performance.now() < mouthCueUntil) return;
+    mouthPhase += .82;
+    setMouth(.17 + .19 * (1 + Math.sin(mouthPhase)) / 2);
+  }, 85);
 }
 function articulateWord(word) {
   if (!word) return;
-  const vowels = (word.match(/[aeiouy]/gi) || []).length;
-  setMouth(Math.min(1, .25 + vowels * .16));
+  const clean = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (!clean) { setMouth(0); return; }
+  const vowels = (clean.match(/[aeiouy]/g) || []).length;
+  const closed = /^[bmp]/.test(clean);
+  setMouth(closed ? .08 : Math.min(.82, .24 + vowels * .13));
+  mouthCueUntil = performance.now() + Math.min(230, 85 + clean.length * 14);
 }
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!Recognition) { listenButton.disabled = true; listenButton.title = "Speech recognition unavailable in this browser"; }
@@ -151,7 +162,8 @@ else {
       speechSynthesis.cancel();
       const answer = new SpeechSynthesisUtterance("I heard you say: " + words + ". This is the Atlas voice workshop, not yet the full AI assistant.");
       answer.lang = "en-US";
-      answer.onstart = startMouth;\n      answer.onboundary = e => { if (e.name === "word") articulateWord(answer.text.slice(e.charIndex).split(/\s/)[0]); };
+      answer.onstart = startMouth;
+      answer.onboundary = e => { if (e.name === "word") articulateWord(answer.text.slice(e.charIndex).split(/\s/)[0]); };
       answer.onend = stopMouth;
       answer.onerror = stopMouth;
       speechSynthesis.speak(answer);
@@ -241,7 +253,10 @@ button.addEventListener("click", () => {
   }
 
   message.onstart = start;
-  message.onboundary = event => {\n    if (!face.classList.contains("speaking")) start();\n    if (event.name === "word") articulateWord(message.text.slice(event.charIndex).split(/\s/)[0]);\n  };
+  message.onboundary = event => {
+    if (!face.classList.contains("speaking")) start();
+    if (event.name === "word") articulateWord(message.text.slice(event.charIndex).split(/\s/)[0]);
+  };
   let speechCheck;
 
   function finish() {
