@@ -35,44 +35,52 @@ p { color: #b9bdca; }
   box-shadow: 0 0 35px #31415a;
 }
 
-.mouth {
+.mouth-opening,
+.lower-lip {
   position: absolute;
-  /* These percentages align the overlay to the lips in PNG image.png. */
-  left: 46.39%;
-  top: 26.8%;
-  width: 15.1%;
-  height: 7.7%;
-  background: linear-gradient(145deg, #341418, #541e25 75%, #82333c);
   opacity: 0;
   pointer-events: none;
 }
 
-.portrait.speaking .mouth {
-  animation: talk 470ms ease-in-out infinite;
+.mouth-opening {
+  /* The top edge follows the lower edge of the teeth in the portrait. */
+  left: 46.39%;
+  top: 26.8%;
+  width: 15.1%;
+  height: 7.7%;
+  background: linear-gradient(145deg, #2c1014, #5a2028);
+  clip-path: polygon(0 0, 16% 26%, 35% 44%, 56% 56%, 72% 59%, 88% 52%, 100% 43%,
+    94% 67%, 77% 96%, 56% 99%, 34% 85%, 15% 58%);
 }
 
-@keyframes talk {
-  0%, 100% {
-    opacity: 0;
-    clip-path: polygon(0 0, 16% 26%, 35% 44%, 56% 56%, 72% 59%, 88% 52%, 100% 43%,
-      88% 52%, 72% 59%, 56% 56%, 35% 44%, 16% 26%);
-  }
-  32% {
-    opacity: .96;
-    clip-path: polygon(0 0, 16% 26%, 35% 44%, 56% 56%, 72% 59%, 88% 52%, 100% 43%,
-      88% 65%, 72% 83%, 56% 86%, 35% 70%, 16% 43%);
-  }
-  65% {
-    opacity: .85;
-    clip-path: polygon(0 0, 16% 26%, 35% 44%, 56% 56%, 72% 59%, 88% 52%, 100% 43%,
-      88% 57%, 72% 69%, 56% 71%, 35% 58%, 16% 33%);
-  }
+.lower-lip {
+  /* Reuse the portrait pixels so the lip texture moves with the opening. */
+  inset: 0;
+  background: url("PNG%20image.png") center / 100% 100% no-repeat;
+  clip-path: polygon(46.39% 26.8%, 48.8% 28.8%, 51.68% 30.19%, 54.85% 31.11%,
+    57.26% 31.34%, 59.68% 30.8%, 61.49% 30.11%, 60.04% 31.25%,
+    57.83% 32.85%, 55.02% 33.84%, 52.3% 33.74%, 50.06% 32.8%, 48.4% 31.3%);
+  transform-origin: 54% 28%;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .portrait.speaking .mouth {
-    animation: none;
-  }
+.portrait.speaking .mouth-opening {
+  animation: show-opening 470ms ease-in-out infinite;
+}
+
+.portrait.speaking .lower-lip {
+  animation: move-lip 470ms ease-in-out infinite;
+}
+
+@keyframes show-opening {
+  0%, 100% { opacity: 0; }
+  32% { opacity: 1; }
+  65% { opacity: .65; }
+}
+
+@keyframes move-lip {
+  0%, 100% { opacity: 0; transform: scaleY(1); }
+  32% { opacity: 1; transform: scaleY(1.26); }
+  65% { opacity: 1; transform: scaleY(1.12); }
 }
 
 button {
@@ -95,7 +103,8 @@ button:disabled { opacity: .55; }
 
   <div id="face" class="portrait">
     <img src="PNG%20image.png" alt="Atlas portrait" width="1086" height="1448">
-    <span class="mouth" aria-hidden="true"></span>
+    <span class="mouth-opening" aria-hidden="true"></span>
+    <span class="lower-lip" aria-hidden="true"></span>
   </div>
 
   <button id="speak">Hear Atlas</button>
@@ -132,12 +141,19 @@ button.addEventListener("click", () => {
   message.rate = 0.95;
   message.pitch = 1.08;
 
-  message.onstart = () => {
+  function start() {
+    clearInterval(speechCheck);
+    if (face.classList.contains("speaking")) return;
     face.classList.add("speaking");
     speechStatus.textContent = "Atlas is speaking…";
-  };
+  }
+
+  message.onstart = start;
+  message.onboundary = start;
+  let speechCheck;
 
   function finish() {
+    clearInterval(speechCheck);
     face.classList.remove("speaking");
     speechStatus.textContent = "Ready to speak";
     button.disabled = false;
@@ -149,6 +165,10 @@ button.addEventListener("click", () => {
     speechStatus.textContent = "Speech could not play. Try again.";
   };
 
+  // Some browser voices report speaking without delivering an initial event.
+  speechCheck = setInterval(() => {
+    if (speechSynthesis.speaking && !speechSynthesis.pending) start();
+  }, 80);
   speechSynthesis.speak(message);
 });
 </script>
