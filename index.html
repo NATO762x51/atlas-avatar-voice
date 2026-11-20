@@ -1,0 +1,154 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Voice</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #10131d;
+  color: white;
+  font-family: Arial, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+main {
+  width: min(94%, 440px);
+  text-align: center;
+}
+h1 { margin-bottom: 8px; }
+p { color: #b9bdca; }
+.face {
+  position: relative;
+  width: 240px;
+  height: 310px;
+  margin: 30px auto;
+  border-radius: 46% 46% 43% 43%;
+  background: #f3bd9f;
+  border: 12px solid #a94e32;
+  box-shadow: 0 0 45px #31415a;
+}
+.eyes {
+  display: flex;
+  justify-content: space-around;
+  padding: 115px 35px 0;
+}
+.eye {
+  width: 25px;
+  height: 18px;
+  background: #438c65;
+  border-radius: 50%;
+  animation: blink 5s infinite;
+}
+@keyframes blink {
+  0%, 94%, 98%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(.08); }
+}
+.nose {
+  width: 15px;
+  height: 32px;
+  border-radius: 50%;
+  border-right: 3px solid #d9967c;
+  margin: 12px auto;
+}
+.mouth {
+  width: 55px;
+  height: 9px;
+  background: #8f3d47;
+  border-radius: 45%;
+  margin: 12px auto;
+  transition: height .09s ease;
+}
+.face.speaking .mouth {
+  animation: talk .22s infinite alternate;
+}
+@keyframes talk {
+  from { height: 7px; width: 50px; }
+  to { height: 35px; width: 43px; }
+}
+button {
+  padding: 16px 30px;
+  border: none;
+  border-radius: 30px;
+  background: #438cce;
+  color: white;
+  font-size: 18px;
+  font-weight: bold;
+}
+button:disabled { opacity: .55; }
+#status { min-height: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ATLAS</h1>
+  <p>Avatar & Voice Workshop</p>
+
+  <div id="face" class="face">
+    <div class="eyes">
+      <div class="eye"></div>
+      <div class="eye"></div>
+    </div>
+    <div class="nose"></div>
+    <div class="mouth"></div>
+  </div>
+
+  <button id="speak">Hear Atlas</button>
+  <p id="status">Ready to speak</p>
+</main>
+
+<script>
+const face = document.getElementById("face");
+const button = document.getElementById("speak");
+const status = document.getElementById("status");
+
+const supported =
+  "speechSynthesis" in window &&
+  "SpeechSynthesisUtterance" in window;
+
+if (!supported) {
+  status.textContent = "Speech unavailable in this browser";
+  button.disabled = true;
+}
+
+button.addEventListener("click", () => {
+  if (!supported) return;
+
+  speechSynthesis.cancel();
+  face.classList.remove("speaking");
+
+  const message = new SpeechSynthesisUtterance(
+    "Hey there! Atlas here. " +
+    "It's good to hear from you. " +
+    "We're bringing my voice and animation to life!"
+  );
+
+  message.lang = "en-US";
+  message.rate = 0.95;
+  message.pitch = 1.08;
+
+  message.onstart = () => {
+    face.classList.add("speaking");
+    status.textContent = "Atlas is speaking...";
+    button.disabled = true;
+  };
+
+  function finish() {
+    face.classList.remove("speaking");
+    status.textContent = "Ready to speak";
+    button.disabled = false;
+  }
+
+  message.onend = finish;
+  message.onerror = finish;
+
+  speechSynthesis.speak(message);
+});
+</script>
+</body>
+</html>
