@@ -5,6 +5,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlas Voice</title>
+  .portrait {
+  width: 100%;
+  margin: 25px auto;
+  transition: transform 0.2s ease;
+}
+
+.portrait img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  box-shadow: 0 0 35px #31415a;
+}
+
+.portrait.speaking {
+  animation: portraitTalk 0.4s infinite alternate;
+}
+
+@keyframes portraitTalk {
+  from { transform: scale(1); }
+  to { transform: scale(1.015); }
+}
 <style>
 * { box-sizing: border-box; }
 body {
@@ -89,14 +111,13 @@ button:disabled { opacity: .55; }
   <h1>ATLAS</h1>
   <p>Avatar & Voice Workshop</p>
 
-  <div id="face" class="face">
-    <div class="eyes">
-      <div class="eye"></div>
-      <div class="eye"></div>
-    </div>
-    <div class="nose"></div>
-    <div class="mouth"></div>
-  </div>
+  <div id="face" class="portrait">
+  <img
+    src="PNG%20image.png"
+    alt="Atlas portrait"
+    id="atlasImage"
+  >
+</div>
 
   <button id="speak">Hear Atlas</button>
   <p id="status">Ready to speak</p>
