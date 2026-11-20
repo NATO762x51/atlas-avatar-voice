@@ -118,6 +118,7 @@ button:disabled { opacity: .55; }
   <video id="full-body" class="full-body-video" preload="metadata" playsinline hidden aria-label="Atlas full-body greeting"></video>
 
   <button id="speak">Hear Atlas</button>
+  <button id="listen" type="button" style="margin-top:12px;background:#285d75">Talk to Atlas</button>
   <p id="status">Ready to speak</p>
 </main>
 
@@ -125,6 +126,33 @@ button:disabled { opacity: .55; }
 const face = document.getElementById("face");
 const button = document.getElementById("speak");
 const speechStatus = document.getElementById("status");
+const listenButton = document.getElementById("listen");
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!Recognition) { listenButton.disabled = true; listenButton.title = "Speech recognition unavailable in this browser"; }
+else {
+  const recognition = new Recognition();
+  recognition.lang = "en-US"; recognition.interimResults = false; recognition.maxAlternatives = 1;
+  listenButton.addEventListener("click", () => {
+    try { recognition.start(); speechStatus.textContent = "Listening… allow microphone access if prompted."; }
+    catch (error) { speechStatus.textContent = "Microphone busy. Try again."; }
+  });
+  recognition.onresult = event => {
+    const words = event.results[0][0].transcript;
+    speechStatus.textContent = "You said: " + words;
+    if (supported) {
+      speechSynthesis.cancel();
+      const answer = new SpeechSynthesisUtterance("I heard you say: " + words + ". This is the Atlas voice workshop, not yet the full AI assistant.");
+      answer.lang = "en-US";
+      answer.onstart = () => face.classList.add("speaking");
+      answer.onend = () => face.classList.remove("speaking");
+      answer.onerror = () => face.classList.remove("speaking");
+      speechSynthesis.speak(answer);
+    }
+  };
+  recognition.onerror = event => { speechStatus.textContent = "Microphone: " + event.error + ". Check Safari microphone permission."; };
+  recognition.onend = () => { if (speechStatus.textContent === "Listening… allow microphone access if prompted.") speechStatus.textContent = "No speech detected. Tap Talk to Atlas to retry."; };
+}
+
 
 const fullBody = document.getElementById("full-body");
 const fullBodyClip = "atlas-full-body.mp4";
