@@ -5,27 +5,42 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlas Voice</title>
-  .portrait {
+.portrait {
+ 
   width: 100%;
+
   margin: 25px auto;
+
   transition: transform 0.2s ease;
+
 }
 
 .portrait img {
+
   display: block;
+
   width: 100%;
+
   height: auto;
+
   border-radius: 18px;
+
   box-shadow: 0 0 35px #31415a;
+
 }
 
 .portrait.speaking {
+
   animation: portraitTalk 0.4s infinite alternate;
+
 }
 
 @keyframes portraitTalk {
+
   from { transform: scale(1); }
+
   to { transform: scale(1.015); }
+
 }
 <style>
 * { box-sizing: border-box; }
