@@ -83,6 +83,14 @@ p { color: #b9bdca; }
   65% { opacity: 1; transform: scaleY(1.12); }
 }
 
+.full-body-video {
+  width: 100%;
+  max-height: 72vh;
+  margin: 25px auto;
+  border-radius: 18px;
+  object-fit: contain;
+}
+
 button {
   padding: 16px 30px;
   border: none;
@@ -107,6 +115,8 @@ button:disabled { opacity: .55; }
     <span class="lower-lip" aria-hidden="true"></span>
   </div>
 
+  <video id="full-body" class="full-body-video" preload="metadata" playsinline hidden aria-label="Atlas full-body greeting"></video>
+
   <button id="speak">Hear Atlas</button>
   <p id="status">Ready to speak</p>
 </main>
@@ -115,6 +125,9 @@ button:disabled { opacity: .55; }
 const face = document.getElementById("face");
 const button = document.getElementById("speak");
 const speechStatus = document.getElementById("status");
+
+const fullBody = document.getElementById("full-body");
+const fullBodyClip = "atlas-full-body.mp4";
 
 const supported =
   "speechSynthesis" in window &&
@@ -125,7 +138,50 @@ if (!supported) {
   button.disabled = true;
 }
 
+// A published clip supplies its own synchronized voice track.
+fetch(fullBodyClip, { method: "HEAD" }).then(response => {
+  if (!response.ok) return;
+  fullBody.src = fullBodyClip;
+  if (!supported) button.disabled = false;
+  if (!supported) speechStatus.textContent = "Ready to speak";
+}).catch(() => {
+  // The portrait greeting remains available if the clip cannot be reached.
+});
+
+function closeFullBody() {
+  fullBody.hidden = true;
+  face.hidden = false;
+  button.disabled = false;
+  speechStatus.textContent = "Ready to speak";
+}
+
+fullBody.addEventListener("ended", closeFullBody);
+fullBody.addEventListener("error", () => {
+  fullBody.removeAttribute("src");
+  if (!fullBody.hidden) {
+    closeFullBody();
+    speechStatus.textContent = "Video unavailable. Tap Hear Atlas to try the portrait.";
+  }
+  if (!supported) button.disabled = true;
+});
+
 button.addEventListener("click", () => {
+  if (button.disabled) return;
+  if (fullBody.hasAttribute("src")) {
+    button.disabled = true;
+    fullBody.hidden = false;
+    face.hidden = true;
+    speechStatus.textContent = "Playing Atlas greeting…";
+    fullBody.play().catch(() => {
+      fullBody.removeAttribute("src");
+      closeFullBody();
+      button.disabled = !supported;
+      speechStatus.textContent = supported
+        ? "Video unavailable. Tap Hear Atlas to try the portrait."
+        : "Video unavailable.";
+    });
+    return;
+  }
   if (!supported) return;
 
   button.disabled = true;
