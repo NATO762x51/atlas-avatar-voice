@@ -25,6 +25,15 @@ p { color: #b9bdca; }
 .portrait {
   position: relative;
   margin: 25px auto;
+  transform-origin: center 75%;
+  animation: atlas-breathe 5.5s ease-in-out infinite;
+}
+@keyframes atlas-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.006); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portrait { animation: none; }
 }
 
 .portrait img {
@@ -125,12 +134,14 @@ function stopMouth() {
   mouthCueUntil = 0;
   setMouth(0);
   face.classList.remove("speaking");
+  face.style.animationDuration = "";
 }
 // Web Speech API does not expose synthesized audio samples. These are
 // text-guided approximate mouth cues, not true phoneme/audio lip sync.
 function startMouth() {
   stopMouth();
   face.classList.add("speaking");
+  face.style.animationDuration = "3.2s";
   mouthTimer = setInterval(() => {
     if (performance.now() < mouthCueUntil) return;
     mouthPhase += .82;
