@@ -22,3 +22,17 @@ Prefer a humanoid skeleton with head, neck, spine, arm and leg bones, facial ble
 
 ## Current state
 The current `index.html` uses an image overlay to simulate lip movement and optionally plays `atlas-full-body.mp4`. It does not yet render a 3D character. Avoid replacing it until a working GLB is available.
+
+
+## Repository research (2026-11-22)
+- **Three.js GLTFLoader**: https://threejs.org/docs/pages/GLTFLoader.html — browser rendering of glTF/GLB; suitable for realistic PBR meshes.
+- **pixiv/three-vrm**: https://github.com/pixiv/three-vrm — VRM humanoid skeleton, expressions, and look-at support; useful if character is exported as VRM rather than plain GLB.
+- **three-vrm examples**: https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm/examples — bones, expressions, animation, Mixamo retargeting examples.
+- **Google MediaPipe Face Landmarker**: https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker — 52 expression blendshape scores from camera input; optional face-performance capture, NOT text-to-speech lip sync.
+- **DanielSWolf/rhubarb-lip-sync**: https://github.com/DanielSWolf/rhubarb-lip-sync — derives timed 2D mouth cues from recorded audio; useful for pre-rendered lines, not a direct live browser TTS solution.
+
+### Recommended architecture
+Use Three.js + GLTFLoader for a realistic GLB first. If the selected asset is VRM, use @pixiv/three-vrm. Preserve the existing speechSynthesis/SpeechRecognition controls and portrait fallback. Add AnimationMixer for bundled skeletal animations and a morph-target mapping layer for mouth and facial expressions. Do not call the current word-boundary mouth approximation phoneme-accurate. Test mobile Safari and licensing before adopting any third-party model.
+
+### Selection gates
+A candidate character must match the approved lean proportions and facial design, support body rigging and facial morph targets, have an explicit redistribution/use license, and render acceptably on iPhone. No candidate model has yet been acquired or approved. Do not ship a mismatched placeholder as Chonis.
