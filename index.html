@@ -125,6 +125,10 @@ model-viewer[hidden] { display: none; }
   <button id="speak">Hear Atlas</button>
   <button id="listen" type="button" style="margin-top:12px;background:#285d75">Talk to Atlas</button>
   <p id="status" role="status">Ready to speak</p>
+  <section id="mic-reply" hidden aria-label="Microphone test">
+    <p id="transcript" aria-live="polite"></p>
+    <button id="play-reply" type="button">Play reply</button>
+  </section>
   <div class="voice-settings" id="voice-settings" hidden>
     <label for="voice">Atlas voice</label>
     <select id="voice"><option value="">Automatic</option></select>
@@ -222,6 +226,10 @@ if (canSpeak) {
   });
 }
 
+const replyPanel = document.getElementById("mic-reply");
+const transcript = document.getElementById("transcript");
+const replyButton = document.getElementById("play-reply");
+let lastHeard = "";
 let clip = null;
 let state = "idle";
 
@@ -229,10 +237,11 @@ function showState(next, message) {
   state = next;
   button.disabled = next !== "idle" || (!canSpeak && !clip);
   listenButton.disabled = next !== "idle" || !recognition;
+  replyButton.disabled = next !== "idle" || !canSpeak || !lastHeard;
   speechStatus.textContent = message;
 }
 
-function speak(text, finished = "Ready to speak") {
+function speak(text, finished = "Ready to speak", failed = "") {
   if (!canSpeak) {
     showState("idle", finished);
     return;
@@ -271,7 +280,7 @@ function speak(text, finished = "Ready to speak") {
     showState("speaking", "Atlas is speaking…");
   }
 
-  const failure = "Speech could not play. Check your browser audio and try again.";
+  const failure = failed || "Speech could not play. Check your browser audio and try again.";
   function timeOut() {
     finish(failure);
     speechSynthesis.cancel();
@@ -303,47 +312,70 @@ if (recognition) {
   recognition.lang = "en-US";
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
-  let captured = null;
-  let micError = null;
+  let listenTimeout;
+
+  function finishListening(message) {
+    if (state !== "listening") return;
+    clearTimeout(listenTimeout);
+    showState("idle", message);
+  }
 
   listenButton.addEventListener("click", () => {
     if (state !== "idle") return;
-    captured = null;
-    micError = null;
-    showState("listening", "Listening… allow microphone access if prompted.");
+    lastHeard = "";
+    replyPanel.hidden = true;
+    transcript.textContent = "";
+    showState("listening", "Waiting for the microphone…");
+    listenTimeout = setTimeout(() => {
+      finishListening("The microphone timed out. Tap Talk to Atlas to retry.");
+      recognition.abort();
+    }, 12000);
     try {
       recognition.start();
     } catch {
-      showState("idle", "Microphone is busy. Try again.");
+      finishListening("Microphone is busy. Try again.");
     }
   });
 
+  recognition.onaudiostart = () => {
+    if (state === "listening") speechStatus.textContent = "Listening… say a short phrase.";
+  };
+
   recognition.onresult = event => {
-    captured = event.results[0][0].transcript;
-    showState("listening", "You said: " + captured);
+    if (state !== "listening") return;
+    lastHeard = event.results[event.resultIndex ?? 0]?.[0]?.transcript.trim() || "";
+    if (!lastHeard) return;
+    transcript.textContent = "Atlas heard: " + lastHeard;
+    replyPanel.hidden = false;
+    finishListening("Phrase captured.");
+    recognition.stop();
+    speak("I heard you say: " + lastHeard,
+      "Reply finished. Tap Talk to Atlas to try another phrase.",
+      "Phrase captured. Tap Play reply to hear it.");
   };
+
   recognition.onerror = event => {
-    if (state !== "listening") return;
     const messages = {
-      "not-allowed": "Allow microphone access in this browser and try again.",
-      "audio-capture": "No microphone is available. Check your input device.",
-      "network": "The browser speech service is unavailable. Try again.",
-      "no-speech": "No speech detected. Tap Talk to Atlas to retry."
+      "not-allowed": "Allow microphone access for this page and try again.",
+      "service-not-allowed": "Speech recognition is unavailable here. Try opening Atlas in Edge or Chrome.",
+      "audio-capture": "No microphone signal. Check your input device.",
+      "network": "The browser speech service could not connect. Open Atlas in Edge or Chrome and retry.",
+      "no-speech": "No speech detected. Tap Talk to Atlas and say a short phrase."
     };
-    micError = messages[event.error] || "Microphone error: " + event.error;
-    speechStatus.textContent = micError;
+    finishListening(messages[event.error] || "Microphone error: " + event.error);
   };
+
   recognition.onend = () => {
-    if (state !== "listening") return;
-    if (micError || !captured) {
-      showState("idle", micError || "No speech detected. Tap Talk to Atlas to retry.");
-      return;
-    }
-    speak("I heard you say: " + captured, "You said: " + captured);
+    finishListening("No phrase captured. Tap Talk to Atlas to retry.");
   };
 } else {
   listenButton.title = "Speech recognition is unavailable in this browser.";
+  listenButton.textContent = "Microphone unavailable";
 }
+
+replyButton.addEventListener("click", () => {
+  if (state === "idle" && lastHeard) speak("I heard you say: " + lastHeard, "Reply finished.");
+});
 
 showState("idle", canSpeak ? "Ready to speak" : "Speech is unavailable in this browser.");
 fetch("atlas-full-body.mp4", { method: "HEAD" }).then(response => {
