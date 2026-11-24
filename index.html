@@ -32,8 +32,16 @@ p { color: #b9bdca; }
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-3px) scale(1.006); }
 }
+.portrait.speaking {
+  animation: atlas-talk 3.2s ease-in-out infinite;
+}
+@keyframes atlas-talk {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  35% { transform: translateY(-4px) rotate(-.45deg); }
+  70% { transform: translateY(-2px) rotate(.35deg); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .portrait { animation: none; }
+  .portrait, .portrait.speaking { animation: none; }
 }
 
 .portrait img {
@@ -111,7 +119,7 @@ button:disabled { opacity: .55; }
 
   <button id="speak">Hear Atlas</button>
   <button id="listen" type="button" style="margin-top:12px;background:#285d75">Talk to Atlas</button>
-  <p id="status">Ready to speak</p>
+  <p id="status" role="status">Ready to speak</p>
 </main>
 
 <script>
@@ -134,14 +142,14 @@ function stopMouth() {
   mouthCueUntil = 0;
   setMouth(0);
   face.classList.remove("speaking");
-  face.style.animationDuration = "";
 }
 // Web Speech API does not expose synthesized audio samples. These are
 // text-guided approximate mouth cues, not true phoneme/audio lip sync.
 function startMouth() {
   stopMouth();
   face.classList.add("speaking");
-  face.style.animationDuration = "3.2s";
+  mouthPhase = 0;
+  setMouth(.22);
   mouthTimer = setInterval(() => {
     if (performance.now() < mouthCueUntil) return;
     mouthPhase += .82;
@@ -157,137 +165,167 @@ function articulateWord(word) {
   setMouth(closed ? .08 : Math.min(.82, .24 + vowels * .13));
   mouthCueUntil = performance.now() + Math.min(230, 85 + clean.length * 14);
 }
-const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (!Recognition) { listenButton.disabled = true; listenButton.title = "Speech recognition unavailable in this browser"; }
-else {
-  const recognition = new Recognition();
-  recognition.lang = "en-US"; recognition.interimResults = false; recognition.maxAlternatives = 1;
-  listenButton.addEventListener("click", () => {
-    try { recognition.start(); speechStatus.textContent = "Listening… allow microphone access if prompted."; }
-    catch (error) { speechStatus.textContent = "Microphone busy. Try again."; }
-  });
-  recognition.onresult = event => {
-    const words = event.results[0][0].transcript;
-    speechStatus.textContent = "You said: " + words;
-    if (supported) {
-      speechSynthesis.cancel();
-      const answer = new SpeechSynthesisUtterance("I heard you say: " + words + ". This is the Atlas voice workshop, not yet the full AI assistant.");
-      answer.lang = "en-US";
-      answer.onstart = startMouth;
-      answer.onboundary = e => { if (e.name === "word") articulateWord(answer.text.slice(e.charIndex).split(/\s/)[0]); };
-      answer.onend = stopMouth;
-      answer.onerror = stopMouth;
-      speechSynthesis.speak(answer);
-    }
-  };
-  recognition.onerror = event => { speechStatus.textContent = "Microphone: " + event.error + ". Check Safari microphone permission."; };
-  recognition.onend = () => { if (speechStatus.textContent === "Listening… allow microphone access if prompted.") speechStatus.textContent = "No speech detected. Tap Talk to Atlas to retry."; };
-}
-
-
 const fullBody = document.getElementById("full-body");
-const fullBodyClip = "atlas-full-body.mp4";
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = Recognition ? new Recognition() : null;
+const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+let clip = null;
+let state = "idle";
 
-const supported =
-  "speechSynthesis" in window &&
-  "SpeechSynthesisUtterance" in window;
-
-if (!supported) {
-  speechStatus.textContent = "Speech unavailable in this browser";
-  button.disabled = true;
+function showState(next, message) {
+  state = next;
+  button.disabled = next !== "idle" || (!canSpeak && !clip);
+  listenButton.disabled = next !== "idle" || !recognition;
+  speechStatus.textContent = message;
 }
 
-// A published clip supplies its own synchronized voice track.
-fetch(fullBodyClip, { method: "HEAD" }).then(response => {
-  if (!response.ok) return;
-  fullBody.src = fullBodyClip;
-  if (!supported) button.disabled = false;
-  if (!supported) speechStatus.textContent = "Ready to speak";
-}).catch(() => {
-  // The portrait greeting remains available if the clip cannot be reached.
-});
-
-function closeFullBody() {
-  fullBody.hidden = true;
-  face.hidden = false;
-  button.disabled = false;
-  speechStatus.textContent = "Ready to speak";
-}
-
-fullBody.addEventListener("ended", closeFullBody);
-fullBody.addEventListener("error", () => {
-  fullBody.removeAttribute("src");
-  if (!fullBody.hidden) {
-    closeFullBody();
-    speechStatus.textContent = "Video unavailable. Tap Hear Atlas to try the portrait.";
-  }
-  if (!supported) button.disabled = true;
-});
-
-button.addEventListener("click", () => {
-  if (button.disabled) return;
-  if (fullBody.hasAttribute("src")) {
-    button.disabled = true;
-    fullBody.hidden = false;
-    face.hidden = true;
-    speechStatus.textContent = "Playing Atlas greeting…";
-    fullBody.play().catch(() => {
-      fullBody.removeAttribute("src");
-      closeFullBody();
-      button.disabled = !supported;
-      speechStatus.textContent = supported
-        ? "Video unavailable. Tap Hear Atlas to try the portrait."
-        : "Video unavailable.";
-    });
+function speak(text, finished = "Ready to speak") {
+  if (!canSpeak) {
+    showState("idle", finished);
     return;
   }
-  if (!supported) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  utterance.rate = .95;
+  utterance.pitch = 1.08;
 
-  button.disabled = true;
-  speechStatus.textContent = "Starting speech…";
+  showState("speaking", "Starting speech…");
+  let started = false;
+  let done = false;
+  let deadline;
+  let poll;
 
-  const message = new SpeechSynthesisUtterance(
-    "Hey there! Atlas here. " +
-    "It's good to hear from you. " +
-    "We're bringing my voice and animation to life!"
-  );
-
-  message.lang = "en-US";
-  message.rate = 0.95;
-  message.pitch = 1.08;
+  function finish(status) {
+    if (done) return;
+    done = true;
+    clearTimeout(deadline);
+    clearInterval(poll);
+    stopMouth();
+    showState("idle", status);
+  }
 
   function start() {
-    clearInterval(speechCheck);
-    if (face.classList.contains("speaking")) return;
+    if (done || started) return;
+    started = true;
+    clearInterval(poll);
+    clearTimeout(deadline);
+    deadline = setTimeout(timeOut, Math.max(15000, text.length * 180));
     startMouth();
-    speechStatus.textContent = "Atlas is speaking…";
+    showState("speaking", "Atlas is speaking…");
   }
 
-  message.onstart = start;
-  message.onboundary = event => {
-    if (!face.classList.contains("speaking")) start();
-    if (event.name === "word") articulateWord(message.text.slice(event.charIndex).split(/\s/)[0]);
-  };
-  let speechCheck;
-
-  function finish() {
-    clearInterval(speechCheck);
-    stopMouth();
-    speechStatus.textContent = "Ready to speak";
-    button.disabled = false;
+  const failure = "Speech could not play. Check your browser audio and try again.";
+  function timeOut() {
+    finish(failure);
+    speechSynthesis.cancel();
   }
 
-  message.onend = finish;
-  message.onerror = () => {
-    finish();
-    speechStatus.textContent = "Speech could not play. Try again.";
+  utterance.onstart = start;
+  utterance.onboundary = event => {
+    if (done) return;
+    start();
+    if (event.name === "word") articulateWord(text.slice(event.charIndex).split(/\s/)[0]);
   };
-
-  // Some browser voices report speaking without delivering an initial event.
-  speechCheck = setInterval(() => {
+  utterance.onend = () => finish(finished);
+  utterance.onerror = () => finish(failure);
+  deadline = setTimeout(timeOut, 4500);
+  poll = setInterval(() => {
     if (speechSynthesis.speaking && !speechSynthesis.pending) start();
   }, 80);
-  speechSynthesis.speak(message);
+
+  try {
+    speechSynthesis.speak(utterance);
+  } catch {
+    finish(failure);
+  }
+}
+
+const greeting = "Hey there! Atlas here. It's good to hear from you. We're bringing my voice and animation to life!";
+
+if (recognition) {
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  let captured = null;
+  let micError = null;
+
+  listenButton.addEventListener("click", () => {
+    if (state !== "idle") return;
+    captured = null;
+    micError = null;
+    showState("listening", "Listening… allow microphone access if prompted.");
+    try {
+      recognition.start();
+    } catch {
+      showState("idle", "Microphone is busy. Try again.");
+    }
+  });
+
+  recognition.onresult = event => {
+    captured = event.results[0][0].transcript;
+    showState("listening", "You said: " + captured);
+  };
+  recognition.onerror = event => {
+    if (state !== "listening") return;
+    const messages = {
+      "not-allowed": "Allow microphone access in this browser and try again.",
+      "audio-capture": "No microphone is available. Check your input device.",
+      "network": "The browser speech service is unavailable. Try again.",
+      "no-speech": "No speech detected. Tap Talk to Atlas to retry."
+    };
+    micError = messages[event.error] || "Microphone error: " + event.error;
+    speechStatus.textContent = micError;
+  };
+  recognition.onend = () => {
+    if (state !== "listening") return;
+    if (micError || !captured) {
+      showState("idle", micError || "No speech detected. Tap Talk to Atlas to retry.");
+      return;
+    }
+    speak("I heard you say: " + captured, "You said: " + captured);
+  };
+} else {
+  listenButton.title = "Speech recognition is unavailable in this browser.";
+}
+
+showState("idle", canSpeak ? "Ready to speak" : "Speech is unavailable in this browser.");
+fetch("atlas-full-body.mp4", { method: "HEAD" }).then(response => {
+  if (!response.ok || !response.headers.get("content-type")?.startsWith("video/")) return;
+  clip = response.url;
+  if (state === "idle" && !canSpeak) showState("idle", "Ready to speak");
+}).catch(() => {});
+
+function closeVideo() {
+  fullBody.hidden = true;
+  face.hidden = false;
+}
+
+function usePortrait() {
+  if (state !== "video") return;
+  clip = null;
+  closeVideo();
+  fullBody.removeAttribute("src");
+  speak(greeting, canSpeak ? "Ready to speak" : "The greeting is unavailable.");
+}
+
+fullBody.addEventListener("ended", () => {
+  if (state !== "video") return;
+  closeVideo();
+  showState("idle", "Ready to speak");
+});
+fullBody.addEventListener("error", usePortrait);
+
+button.addEventListener("click", () => {
+  if (state !== "idle") return;
+  if (!clip) {
+    speak(greeting);
+    return;
+  }
+  showState("video", "Playing Atlas greeting…");
+  fullBody.src = clip;
+  fullBody.hidden = false;
+  face.hidden = true;
+  fullBody.play().catch(usePortrait);
 });
 </script>
 </body>
