@@ -102,6 +102,11 @@ button {
 }
 button:disabled { opacity: .55; }
 #status { min-height: 24px; }
+.voice-settings, .model-preview { margin: 16px 0; text-align: left; }
+.voice-settings select, .model-preview select { display: block; width: 100%; margin-top: 6px; padding: 8px; }
+.model-preview input { display: block; max-width: 100%; margin: 12px 0; }
+model-viewer { display: block; width: 100%; height: min(60vh, 500px); background: #1e2535; border-radius: 12px; }
+model-viewer[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -120,6 +125,21 @@ button:disabled { opacity: .55; }
   <button id="speak">Hear Atlas</button>
   <button id="listen" type="button" style="margin-top:12px;background:#285d75">Talk to Atlas</button>
   <p id="status" role="status">Ready to speak</p>
+  <div class="voice-settings" id="voice-settings" hidden>
+    <label for="voice">Atlas voice</label>
+    <select id="voice"><option value="">Automatic</option></select>
+  </div>
+  <details class="model-preview">
+    <summary>Preview a full-body model</summary>
+    <label for="model-file">Choose a self-contained Blender export (.glb)</label>
+    <input id="model-file" type="file" accept=".glb,model/gltf-binary">
+    <p id="model-status" role="status"></p>
+    <model-viewer id="model" camera-controls touch-action="pan-y" autoplay hidden alt="Full-body avatar model"></model-viewer>
+    <div id="animation-controls" hidden>
+      <label for="animation">Model animation</label>
+      <select id="animation"></select>
+    </div>
+  </details>
 </main>
 
 <script>
@@ -169,6 +189,39 @@ const fullBody = document.getElementById("full-body");
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const recognition = Recognition ? new Recognition() : null;
 const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+const voiceSelect = document.getElementById("voice");
+const preferredVoices = [
+  /\bsamantha\b/i,
+  /\bjenny\b/i,
+  /\baria\b/i,
+  /\bava\b/i,
+  /\bzira\b/i,
+  /google us english/i,
+  /\bkaren\b/i,
+  /\bmoira\b/i,
+  /\bdaniel(le)\b/i
+];
+let voices = [];
+let voicePreference = "";
+try { voicePreference = localStorage.getItem("atlas-voice") || ""; } catch {}
+
+function refreshVoices() {
+  voices = speechSynthesis.getVoices().filter(voice => /^en(?:-|$)/i.test(voice.lang));
+  voiceSelect.length = 1;
+  for (const voice of voices) voiceSelect.add(new Option(voice.name + " (" + voice.lang + ")", voice.voiceURI));
+  voiceSelect.value = voices.some(voice => voice.voiceURI === voicePreference) ? voicePreference : "";
+}
+
+if (canSpeak) {
+  document.getElementById("voice-settings").hidden = false;
+  refreshVoices();
+  speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+  voiceSelect.addEventListener("change", () => {
+    voicePreference = voiceSelect.value;
+    try { localStorage.setItem("atlas-voice", voicePreference); } catch {}
+  });
+}
+
 let clip = null;
 let state = "idle";
 
@@ -185,9 +238,13 @@ function speak(text, finished = "Ready to speak") {
     return;
   }
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = .95;
-  utterance.pitch = 1.08;
+  const chosen = voices.find(candidate => candidate.voiceURI === voiceSelect.value)
+    || preferredVoices.map(pattern => voices.find(candidate => pattern.test(candidate.name))).find(Boolean);
+  const voice = chosen || voices.find(candidate => candidate.default);
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang || "en-US";
+  utterance.rate = .96;
+  utterance.pitch = chosen ? 1.04 : 1.12;
 
   showState("speaking", "Starting speech…");
   let started = false;
@@ -317,7 +374,7 @@ fullBody.addEventListener("error", usePortrait);
 
 button.addEventListener("click", () => {
   if (state !== "idle") return;
-  if (!clip) {
+  if (!clip || voiceSelect.value) {
     speak(greeting);
     return;
   }
@@ -326,6 +383,66 @@ button.addEventListener("click", () => {
   fullBody.hidden = false;
   face.hidden = true;
   fullBody.play().catch(usePortrait);
+});
+
+const modelFile = document.getElementById("model-file");
+const viewer = document.getElementById("model");
+const modelStatus = document.getElementById("model-status");
+const animations = document.getElementById("animation");
+const controls = document.getElementById("animation-controls");
+let viewerModule;
+let modelUrl;
+let selection = 0;
+
+modelFile.addEventListener("change", async () => {
+  const file = modelFile.files[0];
+  if (!file) return;
+  const request = ++selection;
+  viewer.hidden = true;
+  controls.hidden = true;
+  viewer.removeAttribute("src");
+  if (modelUrl) URL.revokeObjectURL(modelUrl);
+  modelUrl = null;
+  if (!/\.glb$/i.test(file.name)) {
+    modelStatus.textContent = "Choose a .glb file exported from Blender.";
+    return;
+  }
+  modelStatus.textContent = "Loading " + file.name + "…";
+  try {
+    viewerModule ??= import("https://ajax.googleapis.com/ajax/libs/model-viewer/4.1.0/model-viewer.min.js");
+    await viewerModule;
+    if (request !== selection) return;
+    modelUrl = URL.createObjectURL(file);
+    viewer.removeAttribute("animation-name");
+    viewer.src = modelUrl;
+    viewer.hidden = false;
+  } catch {
+    viewerModule = null;
+    if (request === selection) modelStatus.textContent = "The 3D viewer could not start. Check your connection and try again.";
+  } finally {
+    if (request === selection) modelFile.value = "";
+  }
+});
+
+viewer.addEventListener("load", () => {
+  if (!modelUrl || viewer.src !== modelUrl) return;
+  animations.replaceChildren(...viewer.availableAnimations.map(name => new Option(name, name)));
+  controls.hidden = animations.length === 0;
+  modelStatus.textContent = controls.hidden
+    ? "Model loaded. This file contains no animation clips."
+    : "Model loaded. Choose an animation to preview.";
+});
+
+viewer.addEventListener("error", () => {
+  if (!modelUrl || viewer.src !== modelUrl) return;
+  viewer.hidden = true;
+  controls.hidden = true;
+  modelStatus.textContent = "This model could not be displayed. Check the GLB export and WebGL support.";
+});
+
+animations.addEventListener("change", () => {
+  viewer.animationName = animations.value;
+  viewer.play();
 });
 </script>
 </body>
