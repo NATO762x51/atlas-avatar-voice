@@ -94,6 +94,20 @@ button {
 }
 button:disabled { opacity: .55; }
 #status { min-height: 24px; }
+main:fullscreen {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  display: grid;
+  place-items: center;
+}
+main:fullscreen > :is(h1, p, button) { display: none; }
+main:fullscreen > :is(.portrait, .full-body-video) {
+  width: min(94vw, 68vh);
+  max-height: 92vh;
+  margin: 0;
+}
+main:fullscreen .portrait img { box-shadow: none; border-radius: 0; }
 </style>
 </head>
 <body>
@@ -111,6 +125,7 @@ button:disabled { opacity: .55; }
 
   <button id="speak">Hear Atlas</button>
   <button id="listen" type="button" style="margin-top:12px;background:#285d75">Talk to Atlas</button>
+  <button id="projection" type="button" hidden>Projection preview</button>
   <p id="status">Ready to speak</p>
 </main>
 
@@ -184,6 +199,26 @@ else {
   recognition.onend = () => { if (speechStatus.textContent === "Listening… allow microphone access if prompted.") speechStatus.textContent = "No speech detected. Tap Talk to Atlas to retry."; };
 }
 
+
+const stage = document.querySelector("main");
+const projection = document.getElementById("projection");
+if (document.fullscreenEnabled && stage.requestFullscreen) {
+  projection.hidden = false;
+  projection.addEventListener("click", async () => {
+    try {
+      await stage.requestFullscreen();
+      button.click();
+    } catch {
+      speechStatus.textContent = "Fullscreen projection is unavailable.";
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if (document.fullscreenElement === stage && event.code === "Space" && !event.repeat) {
+      event.preventDefault();
+      button.click();
+    }
+  });
+}
 
 const fullBody = document.getElementById("full-body");
 const fullBodyClip = "atlas-full-body.mp4";
